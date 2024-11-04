@@ -1,0 +1,106 @@
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix, classification_report
+from tensorflow.keras import layers, models
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load the ECG dataset
+ecg_dataset = pd.read_csv("Datasets/ecg-csv/ecg.csv")  # Update path if needed
+
+# OR Load the dataset Online
+# PATH_TO_DATA = 'http://storage.googleapis.com/download.tensorflow.org/data/ecg.csv'
+# ecg_dataset = pd.read_csv(PATH_TO_DATA, header=None)
+
+# Preprocess the data
+scaler = StandardScaler()
+X = scaler.fit_transform(ecg_dataset.values)
+y = X  # Autoencoder input and output are the same
+
+X_train, X_test, _, _ = train_test_split(X, X, test_size=0.2, random_state=42)
+
+# Build and train the Autoencoder model
+input_dim = X_train.shape[1]
+encoder = models.Sequential([
+    layers.Input(shape=(input_dim,)),
+    layers.Dense(32, activation='relu'),
+    layers.Dense(16, activation='relu'),
+    layers.Dense(8, activation='relu')
+])
+
+decoder = models.Sequential([
+    layers.Input(shape=(8,)),
+    layers.Dense(16, activation='relu'),
+    layers.Dense(32, activation='relu'),
+    layers.Dense(input_dim, activation='linear')  # Use linear activation for reconstruction
+])
+
+autoencoder = models.Sequential([encoder, decoder])
+autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+autoencoder.fit(X_train, X_train, epochs=100, batch_size=32, shuffle=True, verbose=1)
+
+# Detect anomalies
+y_pred = autoencoder.predict(X_test)
+mse = np.mean(np.power(X_test - y_pred, 2), axis=1)
+
+# Define a threshold for anomaly detection
+threshold = np.percentile(mse, 95)  # Adjust the percentile as needed
+anomalies = mse > threshold
+
+# Calculate the number of anomalies
+num_anomalies = np.sum(anomalies)
+print(f"Number of Anomalies: {num_anomalies}")
+
+# Plot the anomalies
+plt.figure(figsize=(12, 6))
+plt.plot(mse, marker='o', linestyle='', markersize=3, label='MSE')
+plt.axhline(threshold, color='r', linestyle='--', label='Anomaly Threshold')
+plt.xlabel('Sample Index')
+plt.ylabel('MSE')
+plt.title('Anomaly Detection Results')
+plt.legend()
+plt.show()
+
+# Visualize a normal ECG example
+plt.figure(figsize=(12, 6))
+plt.plot(X_test[0], label='Original ECG')
+plt.plot(y_pred[0], label='Reconstructed ECG')
+plt.xlabel('Time')
+plt.ylabel('Amplitude')
+plt.legend()
+plt.title('Normal ECG')
+plt.show()
+
+# Listing the index of anomalies in X_test
+anomalies_index = [index for index, anomaly in enumerate(anomalies) if anomaly]
+
+# Visualize an anomalous ECG example
+n = 4  # Choose an index to visualize
+anomaly_index = anomalies_index[n]
+plt.figure(figsize=(12, 6))
+plt.plot(X_test[anomaly_index], label='Original ECG')
+plt.plot(y_pred[anomaly_index], label='Reconstructed ECG')
+plt.xlabel('Time')
+plt.ylabel('Amplitude')
+plt.legend()
+plt.title('ECG and Anomalies')
+plt.show()
+
+# Evaluate the model
+y_true = np.zeros(len(X_test))  # Assuming no anomalies in the test set
+print("Confusion Matrix:")
+print(confusion_matrix(anomalies, anomalies))
+
+print("\nClassification Report:")
+print(classification_report(anomalies, anomalies))
+
+# Confusion Matrix Visualization
+plt.figure(figsize=(6, 4.75))
+sns.heatmap(confusion_matrix(anomalies, anomalies), annot=True, annot_kws={"size": 16}, fmt='d')
+plt.xlabel("Predicted label", fontsize=14)
+plt.ylabel("True label", fontsize=14)
+plt.title("Confusion Matrix", fontsize=14)
+plt.show()
